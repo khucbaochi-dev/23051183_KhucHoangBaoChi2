@@ -10,7 +10,9 @@ import matplotlib
 matplotlib.use('Agg')
 from scipy.optimize import linprog, milp, LinearConstraint, Bounds
 import io
-import os
+import subprocess
+import sys
+from pathlib import Path
 
 # ── CẤU HÌNH TRANG ───────────────────────────────────────────────
 st.set_page_config(
@@ -74,42 +76,91 @@ def load_data():
 
 df_macro, df_sectors, df_regions = load_data()
 
-from pathlib import Path
-import runpy
-import contextlib
-import traceback
-
+# ── HỖ TRỢ CHẠY SCRIPT MÔ HÌNH ────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 
-def run_script(script_name: str, image_name: str | None = None):
-    """Run a standalone bài script, capture stdout/stderr, and keep generated files next to the app."""
+SCRIPT_PAGES = {
+    "🗺️ Bài 4 — LP ngành-vùng": {
+        "title": "Bài 4 — LP phân bổ ngân sách số theo vùng",
+        "desc": "LP 24 biến phân bổ 50,000 tỷ cho 6 vùng × 4 hạng mục",
+        "script": "bai04_lp_region.py",
+        "image": "bai04_ket_qua.png",
+    },
+    "📋 Bài 5 — MIP 15 dự án": {
+        "title": "Bài 5 — MIP lựa chọn tối ưu 15 dự án",
+        "desc": "MIP lựa chọn tối ưu trong 15 dự án chuyển đổi số quốc gia",
+        "script": "bai05_mip_projects.py",
+        "image": "bai05_ket_qua.png",
+    },
+    "🎯 Bài 7 — Pareto đa mục tiêu": {
+        "title": "Bài 7 — Pareto front 4 mục tiêu",
+        "desc": "Pareto front 4 mục tiêu: GDP, bình đẳng, môi trường, an ninh",
+        "script": "bai07_pareto.py",
+        "image": "bai07_ket_qua.png",
+    },
+    "⏳ Bài 8 — Động 2026-2035": {
+        "title": "Bài 8 — Tối ưu động 2026-2035",
+        "desc": "Tối ưu động phân bổ vốn 10 năm, U=ρ^t·ln(C_t)",
+        "script": "bai08_dynamic.py",
+        "image": "bai08_ket_qua.png",
+    },
+    "👷 Bài 9 — Lao động & AI": {
+        "title": "Bài 9 — Lao động & AI",
+        "desc": "LP tối đa NetJob: đầu tư AI vs đào tạo lại 8 ngành",
+        "script": "bai09_labor.py",
+        "image": "bai09_ket_qua.png",
+    },
+    "🎲 Bài 10 — Stochastic SP": {
+        "title": "Bài 10 — Stochastic LP",
+        "desc": "Stochastic LP 2 giai đoạn, 4 kịch bản, VSS & EVPI",
+        "script": "bai10_stochastic.py",
+        "image": "bai10_ket_qua.png",
+    },
+    "🤖 Bài 11 — Q-learning RL": {
+        "title": "Bài 11 — Q-Learning",
+        "desc": "Q-Learning 81 trạng thái, 5 hành động, 20,000 episodes",
+        "script": "bai11_qlearning.py",
+        "image": "bai11_ket_qua.png",
+    },
+}
+
+@st.cache_data(show_spinner=False)
+def _run_script(script_name: str, mtime: float):
     script_path = BASE_DIR / script_name
+    proc = subprocess.run(
+        [sys.executable, str(script_path)],
+        cwd=str(BASE_DIR),
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    return proc.stdout, proc.stderr, proc.returncode
+
+def render_script_page(page_name: str):
+    cfg = SCRIPT_PAGES[page_name]
+    st.title(cfg["title"])
+    st.info(f"📌 {cfg['desc']}")
+
+    script_path = BASE_DIR / cfg["script"]
     if not script_path.exists():
-        return "", f"Không tìm thấy file: {script_path}"
-    buf_out = io.StringIO()
-    buf_err = io.StringIO()
-    old_cwd = Path.cwd()
-    try:
-        # Ensure relative CSV/image paths resolve from the app folder
-        os.chdir(BASE_DIR)
-        with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
-            runpy.run_path(str(script_path), run_name="__main__")
-        stdout = buf_out.getvalue()
-        stderr = buf_err.getvalue()
-        if stderr and not stdout:
-            stdout = stderr
-        return stdout, None
-    except Exception:
-        tb = traceback.format_exc()
-        return buf_out.getvalue() + ("\n" if buf_out.getvalue() else "") + buf_err.getvalue(), tb
-    finally:
-        os.chdir(old_cwd)
+        st.error(f"Không tìm thấy file mô hình: {script_path.name}")
+        return
 
-def show_generated_image(image_name: str, caption: str):
-    image_path = BASE_DIR / image_name
-    if image_path.exists():
-        st.image(str(image_path), caption=caption, use_container_width=True)
+    with st.spinner(f"Đang chạy {script_path.name}..."):
+        stdout, stderr, code = _run_script(cfg["script"], script_path.stat().st_mtime)
 
+    img_path = BASE_DIR / cfg["image"]
+    if img_path.exists():
+        st.image(str(img_path), use_container_width=True)
+
+    if code != 0:
+        st.error(f"Script trả về mã lỗi {code}")
+    if stderr.strip():
+        with st.expander("Cảnh báo / lỗi từ console"):
+            st.code(stderr)
+    if stdout.strip():
+        with st.expander("Xem log giải mô hình"):
+            st.code(stdout, language="text")
 
 # ── SIDEBAR ──────────────────────────────────────────────────────
 with st.sidebar:
@@ -423,342 +474,78 @@ elif page == "🌐 Bài 6 — TOPSIS 6 vùng":
     st.dataframe(df_topsis.sort_values('C*',ascending=False),use_container_width=True,hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════
-# ══════════════════════════════════════════════════════════════════
-# BÀI 12 – AIDEOM tích hợp (4 tabs giống của thầy)
+# BÀI 12 – AIDEOM tích hợp
 # ══════════════════════════════════════════════════════════════════
 elif page == "🔗 Bài 12 — AIDEOM tích hợp":
     st.title("Bài 12 — AIDEOM-VN: Hệ thống tích hợp 5 kịch bản")
 
-    Y  = df_macro["GDP_trillion_VND"].values
-    D  = df_macro["digital_economy_share_GDP_pct"].values
-    K  = np.array([16500,17800,19600,21300,23500,25900])
-    L  = np.array([53.6,50.5,51.7,52.4,52.9,53.4])
-    AI = np.array([55.6,60.2,65.4,67.0,73.8,80.1])
-    H  = np.array([24.1,26.1,26.2,27.0,28.4,29.2])
-    a_,b_,g_,d_,t_ = 0.33,0.42,0.10,0.08,0.07
-    A_hist = Y/(K**a_*L**b_*D**g_*AI**d_*H**t_)
+    scenarios={'S1 Truyền thống':[0.70,0.10,0.10,0.10],
+               'S2 Số hóa nhanh':[0.25,0.45,0.15,0.15],
+               'S3 AI dẫn dắt':[0.20,0.20,0.45,0.15],
+               'S4 Bao trùm số':[0.30,0.20,0.10,0.40],
+               'S5 Tối ưu LP':[None,None,None,None]}
 
-    tab1,tab2,tab3,tab4 = st.tabs([
-        "📊 Tổng quan (M1-M2)",
-        "💰 Phân bổ (M3)",
-        "🎯 5 Kịch bản (M6)",
-        "⚠️ Cảnh báo rủi ro (M4-M5)"
-    ])
+    Y=df_macro['GDP_trillion_VND'].values
+    D=df_macro['digital_economy_share_GDP_pct'].values
+    K=np.array([16500,17800,19600,21300,23500,25900])
+    L=np.array([53.6,50.5,51.7,52.4,52.9,53.4])
+    AI=np.array([55.6,60.2,65.4,67.0,73.8,80.1])
+    H=np.array([24.1,26.1,26.2,27.0,28.4,29.2])
+    alpha_,beta_,gamma_,delta_,theta_=0.33,0.42,0.10,0.08,0.07
+    A_hist=Y/(K**alpha_*L**beta_*D**gamma_*AI**delta_*H**theta_)
 
-    with tab1:
-        st.markdown("## M1 — Dự báo kinh tế (Cobb-Douglas)")
-        if st.button("▶ Chạy M1", type="primary"):
-            with st.spinner("Đang tính toán..."):
-                A_mean=A_hist.mean()
-                Y_hat=A_mean*K**a_*L**b_*D**g_*AI**d_*H**t_
-                mape=float(np.mean(np.abs((Y-Y_hat)/Y))*100)
-                Ks,Ls,As=K[-1],L[-1],A_hist[-1]
-                for _ in range(5): Ks*=1.06; Ls*=1.01; As*=1.012
-                GDP2030=As*Ks**a_*Ls**b_*(D[-1]+10)**g_*(AI[-1]+14)**d_*(H[-1]+5)**t_
-                c1,c2,c3=st.columns(3)
-                c1.metric("MAPE (Cobb-Douglas)",f"{mape:.2f}%")
-                c2.metric("Ā (TFP trung bình)",f"{A_hist.mean():.4f}")
-                c3.metric("Y 2030 dự báo",f"{GDP2030:,.0f} ng.tỷ")
-                dY=np.diff(np.log(Y)); cK=a_*np.diff(np.log(K)); cL=b_*np.diff(np.log(L))
-                cD=g_*np.diff(np.log(D)); cAI=d_*np.diff(np.log(AI)); cH=t_*np.diff(np.log(H))
-                cTFP=dY-cK-cL-cD-cAI-cH
-                means={"TFP (A)":cTFP.mean()*100,"Vốn (K)":cK.mean()*100,
-                       "Lao động (L)":cL.mean()*100,"Số hóa (D)":cD.mean()*100,
-                       "AI":cAI.mean()*100,"Nhân lực số (H)":cH.mean()*100}
-                fig,ax=plt.subplots(figsize=(10,4),facecolor="#0e1117")
-                ax.set_facecolor("#0e1117"); ax.tick_params(colors="white")
-                for sp in ax.spines.values(): sp.set_color("#333")
-                cols_bar=["#26C6DA","#FFA726","#EF5350","#AB47BC","#42A5F5","#66BB6A"]
-                bars=ax.bar(list(means.keys()),list(means.values()),color=cols_bar,alpha=0.9,edgecolor="none")
-                ax.set_title("Phân rã đóng góp tăng trưởng 2020-2025",color="white",fontsize=12)
-                ax.set_xlabel("Yếu tố",color="white"); ax.set_ylabel("Đóng_góp_pct",color="white")
-                ax.axhline(0,color="#555",lw=0.8)
-                for bar,v in zip(bars,means.values()):
-                    ax.text(bar.get_x()+bar.get_width()/2,v+0.05 if v>=0 else v-0.15,
-                            f"{v:.2f}%",ha="center",color="white",fontsize=9)
-                plt.tight_layout(); st.pyplot(fig); plt.close()
+    res_s={}
+    for sname,alloc in scenarios.items():
+        D_t=30 if 'Số hóa' in sname else 26
+        AI_t=120 if 'AI' in sname else 100
+        H_t =35  if 'Bao trùm' in sname else 33
+        K_s,L_s,A_s=K[-1],L[-1],A_hist[-1]
+        for _ in range(5): K_s*=1.06; L_s*=1.01; A_s*=1.012
+        D_5=D[-1]+D_t-D[-1]; AI_5=AI[-1]+AI_t-AI[-1]; H_5=H[-1]+H_t-H[-1]
+        gdp=A_s*K_s**alpha_*L_s**beta_*D_5**gamma_*AI_5**delta_*H_5**theta_
+        cagr=(gdp/Y[-1])**(1/5)-1
+        if alloc[0] is None:
+            c_obj=np.array([-0.85,-1.20,-0.95,-1.35])
+            A_ub=np.array([[1,1,1,1],[-1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,-1],[0.35,-0.65,0.35,-0.65]])
+            b_ub=np.array([100,-25,-15,-20,-10,0])
+            r=linprog(c_obj,A_ub=A_ub,b_ub=b_ub,bounds=[(0,None)]*4,method='highs')
+            gain=-r.fun if r.success else 0
         else:
-            st.info("👆 Click **Chạy M1** để tính toán và hiển thị kết quả")
+            beta_lp=np.array([0.85,1.20,0.95,1.35])
+            gain=float(np.dot(beta_lp, np.array(alloc)*100))
+        res_s[sname]={'GDP_2030':gdp,'CAGR':cagr,'gain':gain}
 
-        st.divider()
-        st.markdown("## M2 — Đánh giá sẵn sàng số (TOPSIS)")
-        if st.button("▶ Chạy M2", type="primary"):
-            with st.spinner("Đang tính TOPSIS..."):
-                regs=["TDMN-PB","ĐBSH","BTB+DHMT","Tây Nguyên","Đông Nam Bộ","ĐBSCL"]
-                crit=["grdp_per_capita_million_VND","fdi_registered_billion_USD",
-                      "digital_index_0_100","ai_readiness_0_100","trained_labor_pct",
-                      "rd_intensity_pct","internet_penetration_pct","gini_coef"]
-                is_b=[True]*7+[False]; w=np.array([0.10,0.10,0.15,0.20,0.15,0.15,0.05,0.10])
-                X=df_regions[crit].values.astype(float)
-                R2=X/np.sqrt((X**2).sum(0)); V=R2*w
-                Ap=np.where(is_b,V.max(0),V.min(0)); An=np.where(is_b,V.min(0),V.max(0))
-                Sp=np.sqrt(((V-Ap)**2).sum(1)); Sn=np.sqrt(((V-An)**2).sum(1)); C=Sn/(Sp+Sn)
-                idx=np.argsort(C)[::-1]
-                fig,ax=plt.subplots(figsize=(8,4),facecolor="#0e1117")
-                ax.set_facecolor("#0e1117"); ax.tick_params(colors="white")
-                for sp in ax.spines.values(): sp.set_color("#333")
-                cols_r=["#ff4b4b","#ff9800","#4CAF50","#555","#555","#555"]
-                ax.barh([regs[i] for i in idx[::-1]],[C[i] for i in idx[::-1]],
-                        color=[cols_r[k] for k in range(5,-1,-1)],alpha=0.9)
-                ax.set_title("TOPSIS – Xếp hạng sẵn sàng AI",color="white",fontsize=12)
-                ax.set_xlabel("C* (gần 1 = tốt hơn)",color="white")
-                plt.tight_layout(); st.pyplot(fig); plt.close()
-                c1,c2,c3=st.columns(3)
-                for i,col in enumerate([c1,c2,c3]):
-                    col.metric(f"#{i+1} ưu tiên AI",regs[idx[i]],f"C*={C[idx[i]]:.4f}")
-        else:
-            st.info("👆 Click **Chạy M2** để xếp hạng 6 vùng theo TOPSIS")
+    # Bảng KPI
+    st.markdown("### 📊 Bảng tổng hợp KPI 2030")
+    rows=[]
+    for s,v in res_s.items():
+        rows.append({'Kịch bản':s,'GDP 2030 (nghìn tỷ)':f"{v['GDP_2030']:,.0f}",
+                     'CAGR (%/năm)':f"{v['CAGR']*100:.2f}%",'GDP gain (tỷ)':f"{v['gain']:,.0f}"})
+    st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
 
-    with tab2:
-        st.markdown("## M3 — Tối ưu phân bổ ngân sách (LP 24 biến)")
-        budget_m3=st.slider("Tổng ngân sách (tỷ VND)",30000,80000,50000,5000)
-        if st.button("▶ Chạy M3", type="primary"):
-            with st.spinner("Đang giải LP..."):
-                R_lp,J_lp,N_lp=6,4,24
-                beta_lp=np.array([[1.15,0.85,0.55,1.30],[0.95,1.25,1.40,1.05],
-                                   [1.05,0.95,0.85,1.15],[1.20,0.75,0.45,1.35],
-                                   [0.90,1.30,1.55,1.00],[1.10,0.85,0.65,1.25]])
-                Al,bl=[],[]
-                Al.append(np.ones(N_lp)); bl.append(budget_m3)
-                for r in range(R_lp):
-                    row=np.zeros(N_lp); row[r*J_lp:(r+1)*J_lp]=-1; Al.append(row); bl.append(-budget_m3/R_lp*0.5)
-                for r in range(R_lp):
-                    row=np.zeros(N_lp); row[r*J_lp:(r+1)*J_lp]=1; Al.append(row); bl.append(budget_m3/R_lp*1.8)
-                row=np.zeros(N_lp)
-                for r in range(R_lp): row[r*J_lp+3]=-1
-                Al.append(row); bl.append(-budget_m3*0.24)
-                res=linprog(-beta_lp.flatten(),A_ub=np.array(Al),b_ub=np.array(bl),bounds=[(0,None)]*N_lp,method="highs")
-                if res.status==0:
-                    x_opt=res.x.reshape(R_lp,J_lp); Z=-res.fun
-                    st.success(f"✅ Z* = **{Z:,.0f} tỷ VND** GDP gain")
-                    regs6=["TDMN-PB","ĐBSH","BTB+DHMT","Tây Nguyên","ĐNB","ĐBSCL"]
-                    items4=["I Hạ tầng","D Số hóa","AI","H Nhân lực"]
-                    df_alloc=pd.DataFrame(x_opt.round(0),index=regs6,columns=items4)
-                    df_alloc["TỔNG"]=df_alloc.sum(axis=1)
-                    st.dataframe(df_alloc,use_container_width=True)
-                    fig,ax=plt.subplots(figsize=(10,4),facecolor="#0e1117")
-                    ax.set_facecolor("#0e1117"); ax.tick_params(colors="white")
-                    for sp in ax.spines.values(): sp.set_color("#333")
-                    cols_j=["#1976D2","#FF9800","#9C27B0","#4CAF50"]
-                    for j,(item,col) in enumerate(zip(items4,cols_j)):
-                        ax.bar(np.arange(R_lp)+j*0.2,x_opt[:,j],0.2,label=item,color=col,alpha=0.85)
-                    ax.set_xticks(np.arange(R_lp)+0.3); ax.set_xticklabels(regs6,rotation=20,color="white")
-                    ax.set_title("Phân bổ tối ưu theo vùng",color="white",fontsize=12)
-                    ax.set_ylabel("Tỷ VND",color="white"); ax.legend(facecolor="#1a1d27",labelcolor="white")
-                    plt.tight_layout(); st.pyplot(fig); plt.close()
-        else:
-            st.info("👆 Click **Chạy M3** để giải LP phân bổ ngân sách")
-
-    with tab3:
-        st.markdown("## M6 — So sánh 5 kịch bản chính sách")
-        if st.button("▶ Chạy M6 – So sánh 5 kịch bản", type="primary"):
-            with st.spinner("Đang tính 5 kịch bản..."):
-                scen_cfg={"S1 Truyền thống":{"alloc":[0.70,0.10,0.10,0.10],"D30":22,"AI30":90,"H30":31,"c":"#795548"},
-                          "S2 Số hóa nhanh":{"alloc":[0.25,0.45,0.15,0.15],"D30":30,"AI30":95,"H30":33,"c":"#2196F3"},
-                          "S3 AI dẫn dắt":  {"alloc":[0.20,0.20,0.45,0.15],"D30":26,"AI30":120,"H30":33,"c":"#9C27B0"},
-                          "S4 Bao trùm số": {"alloc":[0.30,0.20,0.10,0.40],"D30":28,"AI30":95,"H30":37,"c":"#4CAF50"},
-                          "S5 Tối ưu LP":   {"alloc":None,                  "D30":30,"AI30":110,"H30":35,"c":"#ff4b4b"}}
-                rows2=[]; gdps=[]; gains=[]; short=[]; cols_sc=[]
-                for sname,cfg in scen_cfg.items():
-                    Ks,Ls,As=K[-1],L[-1],A_hist[-1]
-                    for _ in range(5): Ks*=1.06; Ls*=1.01; As*=1.012
-                    Dt=D[-1]+(cfg["D30"]-D[-1]); AIt=AI[-1]+(cfg["AI30"]-AI[-1]); Ht=H[-1]+(cfg["H30"]-H[-1])
-                    gdp=As*Ks**a_*Ls**b_*Dt**g_*AIt**d_*Ht**t_; cagr=(gdp/Y[-1])**(1/5)-1
-                    if cfg["alloc"] is None:
-                        c_o=np.array([-0.85,-1.20,-0.95,-1.35])
-                        A_u=np.array([[1,1,1,1],[-1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,-1],[0.35,-0.65,0.35,-0.65]])
-                        b_u=np.array([100,-25,-15,-20,-10,0])
-                        r2=linprog(c_o,A_ub=A_u,b_ub=b_u,bounds=[(0,None)]*4,method="highs")
-                        gain=-r2.fun if r2.success else 0
-                    else:
-                        gain=float(np.dot([0.85,1.20,0.95,1.35],np.array(cfg["alloc"])*100))
-                    rows2.append({"Kịch bản":sname,"GDP 2030 (nghìn tỷ)":f"{gdp:,.0f}",
-                                  "CAGR (%/năm)":f"{cagr*100:.2f}%","GDP gain (tỷ)":f"{gain:,.0f}"})
-                    gdps.append(gdp); gains.append(gain); short.append(sname[:2]); cols_sc.append(cfg["c"])
-
-                st.dataframe(pd.DataFrame(rows2),use_container_width=True,hide_index=True)
-                fig,axes=plt.subplots(1,2,figsize=(14,5),facecolor="#0e1117")
-                for ax in axes:
-                    ax.set_facecolor("#0e1117"); ax.tick_params(colors="white")
-                    for sp in ax.spines.values(): sp.set_color("#333")
-                lb=["S1","S2","S3","S4","S5*"]
-                bars=axes[0].bar(lb,gdps,color=cols_sc,alpha=0.9,edgecolor="none")
-                axes[0].axhline(Y[-1],color="#ff9800",ls="--",alpha=0.7,label=f"GDP 2025={Y[-1]:,.0f}")
-                axes[0].set_title("GDP 2030 theo kịch bản",color="white",fontsize=12)
-                axes[0].set_ylabel("nghìn tỷ VND",color="white"); axes[0].legend(facecolor="#1a1d27",labelcolor="white")
-                for bar,v in zip(bars,gdps):
-                    axes[0].text(bar.get_x()+bar.get_width()/2,v+50,f"{v:,.0f}",ha="center",color="white",fontsize=8,fontweight="bold")
-                axes[1].bar(lb,gains,color=cols_sc,alpha=0.9,edgecolor="none")
-                axes[1].set_title("GDP gain từ đầu tư số",color="white",fontsize=12); axes[1].set_ylabel("Tỷ VND",color="white")
-                plt.tight_layout(); st.pyplot(fig); plt.close()
-                best=list(scen_cfg.keys())[int(np.argmax(gains))]
-                st.success(f"🏆 Kịch bản GDP gain cao nhất: **{best}**")
-        else:
-            st.info("👆 Click **Chạy M6** để so sánh 5 kịch bản")
-
-    with tab4:
-        st.markdown("## M4 — Mô phỏng lao động & M5 — Cảnh báo rủi ro")
-        bl_m4=st.slider("Ngân sách lao động (tỷ VND)",10000,50000,30000,5000)
-        if st.button("▶ Chạy M4+M5", type="primary"):
-            with st.spinner("Đang mô phỏng..."):
-                sec=["Nông-Lâm-TS","CN Chế biến","Xây dựng","Bán buôn-lẻ","Tài chính-NH","Logistics","CNTT-TT","Giáo dục"]
-                risk2=np.array([0.18,0.42,0.25,0.38,0.52,0.35,0.28,0.22])
-                a1j=np.array([8.5,32.5,12.8,22.4,45.8,28.5,62.5,18.5])
-                b1j=np.array([45.,28.,35.,32.,22.,30.,20.,55.])
-                c1j=np.array([5.2,62.4,18.5,48.2,72.5,42.8,32.5,12.5])
-                N8=8; Nv2=2*N8; net=a1j-c1j*risk2
-                c_o2=np.concatenate([-net,-b1j]); Al3,bl3=[],[]
-                Al3.append(np.ones(Nv2)); bl3.append(bl_m4)
-                for i in range(N8):
-                    row=np.zeros(Nv2); row[i]=-net[i]; row[N8+i]=-b1j[i]; Al3.append(row); bl3.append(0)
-                for i in range(N8):
-                    row=np.zeros(Nv2); row[i]=c1j[i]*risk2[i]; row[N8+i]=-b1j[i]; Al3.append(row); bl3.append(0)
-                rl=linprog(c_o2,A_ub=np.array(Al3),b_ub=np.array(bl3),bounds=[(0,None)]*Nv2,method="highs")
-                if rl.status==0:
-                    xAI2=rl.x[:N8]; xH2=rl.x[N8:]
-                    NJ=net*xAI2+b1j*xH2; Disp=c1j*risk2*xAI2
-                    c1m,c2m,c3m=st.columns(3)
-                    c1m.metric("Tổng NetJob",f"{NJ.sum():,.0f}","việc làm ròng")
-                    c2m.metric("Bị thay thế",f"{Disp.sum():,.0f}","việc")
-                    c3m.metric("Đào tạo lại",f"{(b1j*xH2).sum():,.0f}","việc nâng cấp")
-                    fig,axes=plt.subplots(1,2,figsize=(14,5),facecolor="#0e1117")
-                    for ax in axes:
-                        ax.set_facecolor("#0e1117"); ax.tick_params(colors="white")
-                        for sp in ax.spines.values(): sp.set_color("#333")
-                    cols_nj=["#4CAF50" if v>0 else "#F44336" for v in NJ]
-                    axes[0].barh(sec[::-1],NJ[::-1],color=cols_nj[::-1],alpha=0.9)
-                    axes[0].axvline(0,color="white",lw=0.8)
-                    axes[0].set_title("NetJob ròng theo ngành",color="white",fontsize=12)
-                    axes[0].set_xlabel("Số việc làm ròng",color="white")
-                    rsk_l=["Cyber risk","Automation","Dependency"]
-                    rsk_v=[float(np.mean(risk2[:6])*0.8), float(np.mean(risk2)), 0.25]
-                    rsk_c=["#F44336" if v>0.4 else "#FF9800" if v>0.2 else "#4CAF50" for v in rsk_v]
-                    br2=axes[1].bar(rsk_l,rsk_v,color=rsk_c,alpha=0.9,width=0.5)
-                    axes[1].axhline(0.4,color="#F44336",ls="--",alpha=0.6,label="Ngưỡng cao")
-                    axes[1].axhline(0.2,color="#FF9800",ls="--",alpha=0.6,label="Ngưỡng TB")
-                    axes[1].set_title("Cảnh báo rủi ro (M5)",color="white",fontsize=12)
-                    axes[1].set_ylabel("Mức độ rủi ro [0-1]",color="white")
-                    axes[1].legend(facecolor="#1a1d27",labelcolor="white")
-                    for bar,v in zip(br2,rsk_v):
-                        axes[1].text(bar.get_x()+bar.get_width()/2,v+0.01,f"{v:.3f}",ha="center",color="white",fontsize=11,fontweight="bold")
-                    plt.tight_layout(); st.pyplot(fig); plt.close()
-                    if NJ.min()<0:
-                        st.error(f"🚨 Ngành {sec[int(np.argmin(NJ))]} có NetJob ÂM — cần tăng đào tạo lại ngay!")
-                    else:
-                        st.success("✅ Tất cả ngành đều có NetJob DƯƠNG — chính sách đang cân bằng")
-        else:
-            st.info("👆 Click **Chạy M4+M5** để phân tích rủi ro lao động")
+    # Biểu đồ so sánh
+    fig,axes=plt.subplots(1,2,figsize=(14,5),facecolor='#0e1117')
+    for ax in axes:
+        ax.set_facecolor('#0e1117'); ax.tick_params(colors='white')
+        for sp in ax.spines.values(): sp.set_color('#333')
+    names=list(res_s.keys()); short=['S1','S2','S3','S4','S5*']
+    gdps=[res_s[n]['GDP_2030'] for n in names]
+    gains=[res_s[n]['gain'] for n in names]
+    colors_s=['#795548','#2196F3','#9C27B0','#4CAF50','#ff4b4b']
+    bars=axes[0].bar(short,gdps,color=colors_s,alpha=0.9,edgecolor='none')
+    axes[0].axhline(Y[-1],color='#ff9800',ls='--',alpha=0.7,label=f'GDP 2025={Y[-1]:,.0f}')
+    axes[0].set_title('GDP 2030 theo kịch bản',color='white',fontsize=12)
+    axes[0].set_ylabel('nghìn tỷ VND',color='white'); axes[0].legend(facecolor='#1a1d27',labelcolor='white')
+    for bar,v in zip(bars,gdps): axes[0].text(bar.get_x()+bar.get_width()/2,v+50,f'{v:,.0f}',
+                                               ha='center',color='white',fontsize=8,fontweight='bold')
+    axes[1].bar(short,gains,color=colors_s,alpha=0.9,edgecolor='none')
+    axes[1].set_title('GDP gain từ đầu tư số',color='white',fontsize=12)
+    axes[1].set_ylabel('Tỷ VND',color='white')
+    plt.tight_layout(); st.pyplot(fig); plt.close()
 
 
+elif page in SCRIPT_PAGES:
+    render_script_page(page)
 
-elif page == "🗺️ Bài 4 — LP ngành-vùng":
-    st.title("Bài 4 — LP 24 biến phân bổ 50,000 tỷ")
-    st.info("📌 LP phân bổ 50,000 tỷ cho 6 vùng × 4 hạng mục")
-    with st.expander("Xem mô hình toán học", expanded=True):
-        st.code("""**max Z = Σ β_{jr}·x_{jr}**
-- 24 biến: 6 vùng × 4 hạng mục
-- Ràng buộc: ngân sách, sàn/trần vùng, công bằng số hóa""", language="text")
-    if st.button("▶ Chạy Bài 4", key="run_bai4"):
-        stdout, err = run_script("bai04_lp_region.py", "bai04_ket_qua.png")
-        if stdout:
-            st.subheader("Kết quả in ra")
-            st.code(stdout, language="text")
-        if err:
-            st.error(err)
-        show_generated_image("bai04_ket_qua.png", "Kết quả Bài 4")
-
-elif page == "📋 Bài 5 — MIP 15 dự án":
-    st.title("Bài 5 — MIP lựa chọn tối ưu 15 dự án")
-    st.info("📌 MIP chọn dự án chuyển đổi số bằng biến nhị phân")
-    with st.expander("Xem mô hình toán học", expanded=True):
-        st.code("""**max Σ B_i·y_i**, y_i ∈ {0,1}
-- 15 biến nhị phân
-- Ràng buộc: ngân sách, tiên quyết, loại trừ""", language="text")
-    if st.button("▶ Chạy Bài 5", key="run_bai5"):
-        stdout, err = run_script("bai05_mip_projects.py", "bai05_ket_qua.png")
-        if stdout:
-            st.subheader("Kết quả in ra")
-            st.code(stdout, language="text")
-        if err:
-            st.error(err)
-        show_generated_image("bai05_ket_qua.png", "Kết quả Bài 5")
-
-elif page == "🎯 Bài 7 — Pareto đa mục tiêu":
-    st.title("Bài 7 — Pareto front 4 mục tiêu")
-    st.info("📌 Pareto front với 4 mục tiêu xung đột")
-    with st.expander("Xem mô hình toán học", expanded=True):
-        st.code("""**max f₁ (GDP), min f₂ (bất bình đẳng), min f₃ (phát thải), min f₄ (rủi ro)**
-- Quét nghiệm Pareto bằng weighted-sum + SLSQP
-- Chọn nghiệm thỏa hiệp bằng TOPSIS""", language="text")
-    if st.button("▶ Chạy Bài 7", key="run_bai7"):
-        stdout, err = run_script("bai07_pareto.py", "bai07_ket_qua.png")
-        if stdout:
-            st.subheader("Kết quả in ra")
-            st.code(stdout, language="text")
-        if err:
-            st.error(err)
-        show_generated_image("bai07_ket_qua.png", "Kết quả Bài 7")
-
-elif page == "⏳ Bài 8 — Động 2026-2035":
-    st.title("Bài 8 — Tối ưu động 2026-2035")
-    st.info("📌 Tối ưu động phân bổ vốn 10 năm")
-    with st.expander("Xem mô hình toán học", expanded=True):
-        st.code("""**max Σ ρ^t·ln(C_t)**, ρ=0.97, T=10 năm
-- 50 biến: I_K, I_D, I_AI, I_H, C mỗi năm
-- Ràng buộc ngân sách liên thời kỳ""", language="text")
-    if st.button("▶ Chạy Bài 8", key="run_bai8"):
-        stdout, err = run_script("bai08_dynamic.py", "bai08_ket_qua.png")
-        if stdout:
-            st.subheader("Kết quả in ra")
-            st.code(stdout, language="text")
-        if err:
-            st.error(err)
-        show_generated_image("bai08_ket_qua.png", "Kết quả Bài 8")
-
-elif page == "👷 Bài 9 — Lao động & AI":
-    st.title("Bài 9 — LP tối đa NetJob")
-    st.info("📌 Tác động AI tới thị trường lao động")
-    with st.expander("Xem mô hình toán học", expanded=True):
-        st.code("""**max Σ NetJob_i = NewJob + UpgradeJob − DisplacedJob**
-- 16 biến: x_AI, x_H × 8 ngành
-- Ràng buộc: Displaced ≤ RetrainingCapacity""", language="text")
-    if st.button("▶ Chạy Bài 9", key="run_bai9"):
-        stdout, err = run_script("bai09_labor.py", "bai09_ket_qua.png")
-        if stdout:
-            st.subheader("Kết quả in ra")
-            st.code(stdout, language="text")
-        if err:
-            st.error(err)
-        show_generated_image("bai09_ket_qua.png", "Kết quả Bài 9")
-
-elif page == "🎲 Bài 10 — Stochastic SP":
-    st.title("Bài 10 — Stochastic LP")
-    st.info("📌 Stochastic LP 2 giai đoạn, 4 kịch bản")
-    with st.expander("Xem mô hình toán học", expanded=True):
-        st.code("""**max β·x + Σ p_s·β_s·y_s**
-- x là quyết định giai đoạn 1
-- y^s là recourse theo kịch bản""", language="text")
-    if st.button("▶ Chạy Bài 10", key="run_bai10"):
-        stdout, err = run_script("bai10_stochastic.py", "bai10_ket_qua.png")
-        if stdout:
-            st.subheader("Kết quả in ra")
-            st.code(stdout, language="text")
-        if err:
-            st.error(err)
-        show_generated_image("bai10_ket_qua.png", "Kết quả Bài 10")
-
-elif page == "🤖 Bài 11 — Q-learning RL":
-    st.title("Bài 11 — Q-Learning")
-    st.info("📌 Q-Learning chính sách kinh tế thích nghi")
-    with st.expander("Xem mô hình toán học", expanded=True):
-        st.code("""**Q(s,a) ← Q(s,a) + α[r + γ·max Q(s',a') − Q(s,a)]**
-- 81 trạng thái (3⁴), 5 hành động
-- ε-greedy, 20,000 episodes""", language="text")
-    if st.button("▶ Chạy Bài 11", key="run_bai11"):
-        stdout, err = run_script("bai11_qlearning.py", "bai11_ket_qua.png")
-        if stdout:
-            st.subheader("Kết quả in ra")
-            st.code(stdout, language="text")
-        if err:
-            st.error(err)
-        show_generated_image("bai11_ket_qua.png", "Kết quả Bài 11")
+else:
+    st.error("Trang không tồn tại hoặc chưa được cấu hình.")
