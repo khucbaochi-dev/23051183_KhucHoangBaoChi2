@@ -632,12 +632,7 @@ elif page == "🎲 Bài 10 — Stochastic SP":
 
 elif page == "🤖 Bài 11 — Q-learning RL":
     exec(open("bai11_qlearning.py", encoding="utf-8").read())
-Bài này đã được giải đầy đủ trong file **`bai{num:02d}_*.py`** trong bộ file đã tải.
 
-**Để chạy trên Colab:**
-1. Mở file `bai{num:02d}_*.py` bằng TextEdit
-2. **Cmd+A** → **Cmd+C**
-3. Dán vào cell Colab → **Shift+Enter**
 """)
         with st.expander("Xem mô hình toán học"):
             models={
