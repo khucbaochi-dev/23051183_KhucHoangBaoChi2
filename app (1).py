@@ -610,8 +610,6 @@ elif page == "🔗 Bài 12 — AIDEOM tích hợp":
                         st.success("✅ Tất cả ngành đều có NetJob DƯƠNG — chính sách đang cân bằng")
         else:
             st.info("👆 Click **Chạy M4+M5** để phân tích rủi ro lao động")
-
-# ── CÁC BÀI KHÁC chỉ hiển thị placeholder ───────────────────────
 elif page == "🗺️ Bài 4 — LP ngành-vùng":
     exec(open("bai04_lp_region.py", encoding="utf-8").read())
 
